@@ -1,7 +1,11 @@
 var default_ttl = 900;
 
 var yargs = require('yargs').argv;
+var fs = require('fs');
 var express = require('express');
+var https = require('https');
+var privateKey = fs.readFileSync('ssl/server.key', 'utf8');
+var certificate = fs.readFileSync('ssl/server.crt', 'utf8');
 var query = require('pg-query');
 query.connectionParameters = yargs['connection-params'];
 var Q = require('q');
@@ -9,12 +13,8 @@ var _ = require('lodash');
 var uuid = require('node-uuid');
 var md5 = require('md5');
 var NodeCache = require( "node-cache" );
-var ExpressBrute = require('express-brute');
 
 var ttl = _.isUndefined(yargs['ttl']) ? default_ttl : yargs['ttl'];
-
-var store = new ExpressBrute.MemoryStore();
-var bruteforce = new ExpressBrute(store);
 var tokenCache = new NodeCache({stdTTL:ttl});
 
 var app = express();
@@ -25,7 +25,7 @@ app.get('/', function(req, res) {
     });
 });
 
-app.post('/check', bruteforce.prevent, function(req, res) {
+app.post('/validate', function(req, res) {
     var token = req.headers['token'];
     var userId = tokenCache.get(token);
 
@@ -34,11 +34,10 @@ app.post('/check', bruteforce.prevent, function(req, res) {
     } else {
         res.send({success:true, userId:userId});
         tokenCache.ttl(token, ttl);
-        updateLastLogin(userId);
     }
 });
 
-app.post('/login', bruteforce.prevent, function(req, res) {
+app.post('/login', function(req, res) {
     var username = req.headers['username'];
     var password = req.headers['password'];
 
@@ -95,6 +94,14 @@ function requestToken(username, password) {
     return deferred.promise;
 }
 
-app.listen(3000, function() {
-    console.log('Authentication service now running on port: 3000');
-});
+var credentials = {
+    key: privateKey,
+    cert: certificate
+};
+
+var httpsServer = https.createServer(credentials, app);
+httpsServer.listen(443);
+
+//app.listen(3000, function() {
+//    console.log('Authentication service now running on port: 3000');
+//});
